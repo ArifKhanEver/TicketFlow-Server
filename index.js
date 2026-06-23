@@ -140,6 +140,17 @@ app.get('/api/tickets', verifyDbReady, async (req, res) => {
     }
 })
 
+// Getting Ticket Details
+app.get('/api/tickets/:id', verifyDbReady, async (req, res) => {
+    try {
+        const {id} = req.params
+        const result = await ticketCollection.findOne(new ObjectId(id))
+        res.send(result)
+    } catch (error) {
+        res.status(500).send({ error: error.message });
+    }
+})
+
 
 
 // ----------------- Server Listening (instant) -----------------
