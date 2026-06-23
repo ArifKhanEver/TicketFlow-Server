@@ -151,6 +151,19 @@ app.get('/api/tickets/:id', verifyDbReady, async (req, res) => {
     }
 })
 
+// Booking Ticket
+app.post('/api/bookings', verifyDbReady, async (req, res) => {
+    try {
+        const booking = { ...req.body, createdAt: new Date() }
+        const result = await bookingCollection.insertOne(booking)
+        res.send(result)
+    } catch (error) {
+        res.status(500).send({ error: error.message })
+    }
+})
+
+
+
 
 
 // ----------------- Server Listening (instant) -----------------
