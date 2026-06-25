@@ -42,8 +42,8 @@ async function connectDB() {
         db = client.db("TicketFlow");
         ticketCollection = db.collection('tickets');
         vendorCollection = db.collection('vendors');
-        usersCollection = db.collection('users');
-        sessionCollection = db.collection('sessions');
+        usersCollection = db.collection('user');
+        sessionCollection = db.collection('session');
         bookingCollection = db.collection('bookings');
 
         await client.db("admin").command({ ping: 1 });
@@ -117,6 +117,53 @@ app.get('/', verifyDbReady, async (req, res) => {
     res.send("Tickets are hovering on the horizon. Go grab them")
 })
 
+//Getting Users
+app.get('/api/users', verifyDbReady, async (req, res) => {
+    try {
+        const result = await usersCollection.find().toArray();
+        res.send(result)
+    } catch (error) {
+        res.status(500).send({ error: error.message });
+    }
+})
+
+//Modifying Users role
+app.patch('/api/users', verifyDbReady, async (req, res) => {
+    try {
+        const { userId, modifiedRole, banned } = req.body;
+
+        if (!userId) {
+            return res.status(400).send({ success: false, error: "User identity token (userId) is required" });
+        }
+
+        const filter = { _id: new ObjectId(userId) };
+        
+        const updateDoc = {
+            $set: {
+                role: modifiedRole,
+                banned: banned
+            }
+        };
+        
+        const result = await usersCollection.updateOne(filter, updateDoc);
+        
+        if (result.modifiedCount > 0 || result.matchedCount > 0) {
+            res.send({
+                success: true,
+                message: "User privileges and BetterAuth ban logs synchronized successfully."
+            });
+        } else {
+            res.status(404).send({
+                success: false,
+                error: "No matching user profile found within the database registry."
+            });
+        }
+    } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+    }
+});
+
+
 // Creating Ticket
 app.post('/api/tickets', verifyDbReady, async (req, res) => {
     try {
@@ -128,17 +175,30 @@ app.post('/api/tickets', verifyDbReady, async (req, res) => {
     }
 })
 
-// Getting Ticket
+// GET: Global Multi-Role Ticket Matrix Pipeline
 app.get('/api/tickets', verifyDbReady, async (req, res) => {
     try {
-        const query = {}
-        if (req.query.vendorId) query.vendorId = req.query.vendorId;
+        const { vendorId, role } = req.query;
+        let query = {};
+
+        if (role === 'admin') {
+            query = {}; 
+        } 
+        else if (vendorId) {
+            query.vendorId = vendorId;
+        } 
+        else {
+            query.status = "approved";
+        }
+
         const result = await ticketCollection.find(query).toArray();
-        res.send(result)
+        res.send({ success: true, data: result });
+        
     } catch (error) {
-        res.status(500).send({ error: error.message });
+        res.status(500).send({ success: false, error: error.message });
     }
-})
+});
+
 
 // Getting Ticket Details
 app.get('/api/tickets/:id', verifyDbReady, async (req, res) => {
@@ -150,6 +210,35 @@ app.get('/api/tickets/:id', verifyDbReady, async (req, res) => {
         res.status(500).send({ error: error.message });
     }
 })
+
+
+// Approving tickets by admin
+app.patch('/api/bookings', verifyDbReady, async (req, res) => {
+    try {
+        const { ticketId, actionStatus } = req.body;
+
+        if (!ticketId) {
+            return res.status(400).send({ success: false, error: "Ticket Id id required" })
+        }
+
+        const filter = { _id: new ObjectId(ticketId) }
+        const updatedDoc = {
+            $set: {
+                status: actionStatus
+            }
+        }
+        const result = await ticketCollection.updateOne(filter, updatedDoc)
+
+        if (result.modifiedCount > 0 || result.matchedCount > 0) {
+            res.send({ success: true, message: "Status updated successfully" });
+        } else {
+            res.status(404).send({ success: false, error: "No booking record found to update" });
+        }
+    } catch (error) {
+        res.status(500).send({ error: error.message })
+    }
+})
+
 
 // Booking Ticket
 app.post('/api/bookings', verifyDbReady, async (req, res) => {
@@ -177,6 +266,33 @@ app.get('/api/bookings/my-bookings', verifyDbReady, async (req, res) => {
         res.send({ success: true, data: result });
     } catch (error) {
         res.status(500).send({ success: false, error: error.message });
+    }
+});
+
+
+// allBookings for admin
+// GET: Admin Access Only - Fetch platform-wide global booking logs
+app.get('/api/bookings/admin/all-bookings', verifyDbReady, async (req, res) => {
+    try {
+        const { role } = req.query;
+        if (role !== 'admin') {
+            return res.status(403).send({
+                success: false,
+                error: "Access Denied: Only administrative privilege tokens are authorized to fetch the global booking matrix."
+            });
+        }
+
+        const result = await bookingCollection.find({}).toArray();
+        res.send({
+            success: true,
+            data: result
+        });
+
+    } catch (error) {
+        res.status(500).send({
+            success: false,
+            error: error.message
+        });
     }
 });
 
