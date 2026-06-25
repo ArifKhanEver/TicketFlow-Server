@@ -143,7 +143,7 @@ app.get('/api/tickets', verifyDbReady, async (req, res) => {
 // Getting Ticket Details
 app.get('/api/tickets/:id', verifyDbReady, async (req, res) => {
     try {
-        const {id} = req.params
+        const { id } = req.params
         const result = await ticketCollection.findOne(new ObjectId(id))
         res.send(result)
     } catch (error) {
@@ -162,7 +162,141 @@ app.post('/api/bookings', verifyDbReady, async (req, res) => {
     }
 })
 
+// My Booked Tickets
+// GET: Fetch bookings for a specific user via Search Query (Temporary Setup)
+app.get('/api/bookings/my-bookings', verifyDbReady, async (req, res) => {
+    try {
+        const { userId } = req.query;
+        if (!userId) {
+            return res.status(400).send({ success: false, error: "User Id query parameter is required" });
+        }
 
+        const query = { userId: userId };
+        const result = await bookingCollection.find(query).toArray();
+
+        res.send({ success: true, data: result });
+    } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+    }
+});
+
+
+// Requested Booking Tickets
+// GET: Fetch bookings for a specific user via Search Query (Temporary Setup)
+app.get('/api/bookings/requested-bookings', verifyDbReady, async (req, res) => {
+    try {
+        const { vendorId } = req.query;
+        if (!vendorId) {
+            return res.status(400).send({ success: false, error: "Vendor Id query parameter is required" });
+        }
+
+        const query = { vendorId: vendorId };
+        const result = await bookingCollection.find(query).toArray();
+
+        res.send({ success: true, data: result });
+    } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+    }
+});
+
+
+// Updating Bookings Requests status
+app.patch('/api/bookings/requested-bookings', verifyDbReady, async (req, res) => {
+    try {
+        const { bookingId, actionStatus } = req.body;
+
+        if (!bookingId) {
+            return res.status(400).send({ success: false, error: "Booking Id is required" })
+        }
+
+        const filter = { _id: new ObjectId(bookingId) }
+        const updatedDoc = {
+            $set: {
+                status: actionStatus
+            }
+        }
+        const result = await bookingCollection.updateOne(filter, updatedDoc)
+        if (result.modifiedCount > 0 || result.matchedCount > 0) {
+            res.send({ success: true, message: "Status updated successfully" });
+        } else {
+            res.status(404).send({ success: false, error: "No booking record found to update" });
+        }
+    } catch (error) {
+        res.status(500).send({ error: error.message })
+    }
+})
+
+
+// Decreasing total ticket count
+app.patch('/api/bookings', verifyDbReady, async (req, res) => {
+    try {
+        const { ticketId, bookingQuantity } = req.body;
+
+        if (!ticketId) {
+            return res.status(400).send({ success: false, error: "Ticket Id id required" })
+        }
+
+        const filter = { _id: new ObjectId(ticketId) }
+        const updatedDoc = {
+            $inc: {
+                quantity: -Number(bookingQuantity || 1)
+            }
+        }
+        const result = await ticketCollection.updateOne(filter, updatedDoc)
+
+        if (result.modifiedCount > 0 || result.matchedCount > 0) {
+            res.send({ success: true, message: "Status updated successfully" });
+        } else {
+            res.status(404).send({ success: false, error: "No booking record found to update" });
+        }
+    } catch (error) {
+        res.status(500).send({ error: error.message })
+    }
+})
+
+
+// Booking status updating
+app.patch('/api/bookings/status/:id', verifyDbReady, async (req, res) => {
+    try {
+        const { id } = req.params
+        const { status } = req.body
+
+        if (!["accepted", "rejected"].includes(status)) {
+            return res.status(400).send({ success: false, error: "Invalid status dynamic type" })
+        }
+
+        const filter = { _id: new ObjectId(id) }
+        const updatedDoc = {
+            $set: {
+                status: status
+            }
+        }
+        const result = await bookingCollection.updateOne(filter, updatedDoc)
+        res.send(result)
+    } catch (error) {
+        res.status(500).send({ error: error.message })
+    }
+})
+
+
+// Booking delete
+app.delete('/api/bookings/:id', verifyDbReady, async (req, res) => {
+    try {
+        const { id } = req.params
+
+        if (!id) {
+            return res.status(400).send({ success: false, error: "Booking Id is required" })
+        }
+
+        const result = await bookingCollection.deleteOne({ _id: new ObjectId(id) })
+        if (result.deleteCount === 0) {
+            return res.status(404).send({ success: false, error: "No booking found with this id" })
+        }
+        res.send(result)
+    } catch (error) {
+        res.status(500).send({ error: error.message })
+    }
+})
 
 
 
