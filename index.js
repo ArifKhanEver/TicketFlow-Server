@@ -137,16 +137,16 @@ app.patch('/api/users', verifyDbReady, async (req, res) => {
         }
 
         const filter = { _id: new ObjectId(userId) };
-        
+
         const updateDoc = {
             $set: {
                 role: modifiedRole,
                 banned: banned
             }
         };
-        
+
         const result = await usersCollection.updateOne(filter, updateDoc);
-        
+
         if (result.modifiedCount > 0 || result.matchedCount > 0) {
             res.send({
                 success: true,
@@ -175,25 +175,53 @@ app.post('/api/tickets', verifyDbReady, async (req, res) => {
     }
 })
 
-// GET: Global Multi-Role Ticket Matrix Pipeline
+// GET: Global Multi-Role Ticket Matrix Pipeline (With Scalability & Fraud Exclusion Filter)
 app.get('/api/tickets', verifyDbReady, async (req, res) => {
     try {
-        const { vendorId, role } = req.query;
+        const { vendorId, role, featured, limit } = req.query;
         let query = {};
+        let sortOption = { departureDateTime: 1 };
+
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const currentStringTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+
+        const bannedUsers = await usersCollection.find({ banned: true }, { projection: { _id: 1 } }).toArray();
+        const bannedVendorIds = bannedUsers.map(user => user._id.toString());
 
         if (role === 'admin') {
-            query = {}; 
-        } 
+            query.departureDateTime = { $gt: currentStringTime };
+            // query.vendorId = { $nin: bannedVendorIds };
+        }
         else if (vendorId) {
             query.vendorId = vendorId;
-        } 
+        }
         else {
             query.status = "approved";
+            query.departureDateTime = { $gt: currentStringTime };
+            query.vendorId = { $nin: bannedVendorIds };
+
+            if (featured === 'true') {
+                query.isAdvertised = true;
+                sortOption = { departureDateTime: 1 };
+            } else {
+                sortOption = { _id: -1 };
+            }
         }
 
-        const result = await ticketCollection.find(query).toArray();
+        let cursor = ticketCollection.find(query).sort(sortOption);
+
+        if (limit) {
+            cursor = cursor.limit(parseInt(limit));
+        }
+
+        const result = await cursor.toArray();
         res.send({ success: true, data: result });
-        
+
     } catch (error) {
         res.status(500).send({ success: false, error: error.message });
     }
@@ -238,6 +266,39 @@ app.patch('/api/bookings', verifyDbReady, async (req, res) => {
         res.status(500).send({ error: error.message })
     }
 })
+
+
+
+// Admin Route: Toggle advertisement with strict campaign slot management
+app.patch('/api/tickets/advertise', verifyDbReady, async (req, res) => {
+    try {
+        const { ticketId, isAdvertised } = req.body;
+        const currentServerTime = new Date().toISOString();
+
+        if (isAdvertised === true) {
+            const activeFeaturedCount = await ticketCollection.countDocuments({
+                isAdvertised: true,
+                departureDateTime: { $gt: currentServerTime }
+            });
+
+            if (activeFeaturedCount >= 6) {
+                return res.status(400).send({
+                    success: false,
+                    error: "Campaign Overload: Maximum of 6 active tickets can be advertised simultaneously. Please revoke an active promotion before escalating a new fleet."
+                });
+            }
+        }
+
+        const filter = { _id: new ObjectId(ticketId) };
+        const updateDoc = { $set: { isAdvertised } };
+        
+        await ticketCollection.updateOne(filter, updateDoc);
+        res.send({ success: true, message: "Campaign registry parameters modified successfully." });
+
+    } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+    }
+});
 
 
 // Booking Ticket
