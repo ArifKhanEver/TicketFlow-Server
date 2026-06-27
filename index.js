@@ -46,7 +46,7 @@ async function connectDB() {
         sessionCollection = db.collection('session');
         bookingCollection = db.collection('bookings');
 
-        // await client.db("admin").command({ ping: 1 });
+        await client.db("admin").command({ ping: 1 });
         console.log("🟢 Pinged your deployment. You successfully connected to MongoDB!");
     } catch (error) {
         console.error("🔴 Failed to connect to MongoDB:", error);
@@ -114,7 +114,7 @@ const verifyAdmin = async (req, res, next) => {
 
 // Root Route 
 app.get('/', verifyDbReady, async (req, res) => {
-    res.send("Tickets are hovering on the horizon. Go grab them")
+    res.send("Tickets are hovering on the horizon. Go grab them.........")
 })
 
 //Getting Users
@@ -174,6 +174,27 @@ app.post('/api/tickets', verifyDbReady, async (req, res) => {
         res.status(500).send({ error: error.message })
     }
 })
+
+
+// Deleting Tickets
+app.delete('/api/tickets/:id', verifyDbReady, async (req, res) => {
+    try {
+        const { id } = req.params
+
+        if (!id) {
+            return res.status(400).send({ success: false, error: "Ticket Id is required" })
+        }
+
+        const result = await ticketCollection.deleteOne({ _id: new ObjectId(id) })
+        if (result.deleteCount === 0) {
+            return res.status(404).send({ success: false, error: "No booking found with this id" })
+        }
+        res.send(result)
+    } catch (error) {
+        res.status(500).send({ error: error.message })
+    }
+})
+
 
 // GET: Global Multi-Role Ticket Matrix Pipeline (With Scalability & Fraud Exclusion Filter)
 app.get('/api/tickets', verifyDbReady, async (req, res) => {
@@ -238,6 +259,44 @@ app.get('/api/tickets/:id', verifyDbReady, async (req, res) => {
         res.status(500).send({ error: error.message });
     }
 })
+
+
+// Updating tickets by vendor
+app.patch('/api/tickets', verifyDbReady, async (req, res) => {
+    try {
+        const { ticketId, ...updateFields } = req.body;
+
+        if (!ticketId) {
+            return res.status(400).send({ 
+                success: false, 
+                error: "Authentication Failure: Ticket ID is strictly required for synchronization." 
+            });
+        }
+
+        const filter = { _id: new ObjectId(ticketId) };
+        
+        const updatedDoc = {
+            $set: updateFields
+        };
+
+        const result = await ticketCollection.updateOne(filter, updatedDoc);
+
+        if (result.modifiedCount > 0 || result.matchedCount > 0) {
+            res.send({ 
+                success: true, 
+                message: "Ticket metrics updated successfully and queued for re-verification." 
+            });
+        } else {
+            res.status(404).send({ 
+                success: false, 
+                error: "No corresponding ticket catalog record found to patch." 
+            });
+        }
+    } catch (error) {
+        console.error("🚨 Express Ticket Patch Exception Log:", error);
+        res.status(500).send({ success: false, error: error.message });
+    }
+});
 
 
 // Approving tickets by admin
@@ -311,6 +370,7 @@ app.post('/api/bookings', verifyDbReady, async (req, res) => {
         res.status(500).send({ error: error.message })
     }
 })
+
 
 // My Booked Tickets
 // GET: Fetch bookings for a specific user via Search Query (Temporary Setup)
