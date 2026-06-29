@@ -195,14 +195,13 @@ app.delete('/api/tickets/:id', verifyDbReady, verifyToken, verifyVendor, async (
 
 
 // GET: Global Multi-Role Ticket Matrix Pipeline (With Scalability & Fraud Exclusion Filter)
+// GET: Global Multi-Role Ticket Matrix Pipeline (With Scalability & Fraud Exclusion Filter)
 app.get('/api/tickets', verifyDbReady, async (req, res) => {
     console.log("server query", req.query);
     try {
-        const { vendorId, role, featured, page = 1, limit = 8, from, to, sort, transportType } = req.query;
+        const { vendorId, role, featured, page, limit, from, to, sort, transportType } = req.query;
         let query = {};
-        
         let sortOption = { _id: -1 }; 
-        const skip = (Number(page) - 1) * Number(limit);
 
         const now = new Date();
         const year = now.getFullYear();
@@ -215,6 +214,9 @@ app.get('/api/tickets', verifyDbReady, async (req, res) => {
         const bannedUsers = await usersCollection.find({ banned: true }, { projection: { _id: 1 } }).toArray();
         const bannedVendorIds = bannedUsers.map(user => user._id.toString());
 
+        const parsedPage = Number(page) || 1;
+        let parsedLimit = limit ? Number(limit) : null; 
+
         if (role === 'admin') {
             query.departureDateTime = { $gt: currentStringTime };
             sortOption = { departureDateTime: 1 };
@@ -223,6 +225,8 @@ app.get('/api/tickets', verifyDbReady, async (req, res) => {
             query.vendorId = vendorId;
         } 
         else {
+            if (!parsedLimit) parsedLimit = 8;
+
             query.status = "approved";
             query.departureDateTime = { $gt: currentStringTime };
             query.vendorId = { $nin: bannedVendorIds };
@@ -252,20 +256,23 @@ app.get('/api/tickets', verifyDbReady, async (req, res) => {
         }
 
         const totalCount = await ticketCollection.countDocuments(query);
-        const totalPages = Math.ceil(totalCount / Number(limit)) || 1;
+        const totalPages = parsedLimit ? Math.ceil(totalCount / parsedLimit) : 1;
 
-        const tickets = await ticketCollection.find(query)
-            .sort(sortOption)
-            .skip(skip)
-            .limit(Number(limit))
-            .toArray();
+        let dbQuery = ticketCollection.find(query).sort(sortOption);
+
+        if (parsedLimit) {
+            const skip = (parsedPage - 1) * parsedLimit;
+            dbQuery = dbQuery.skip(skip).limit(parsedLimit);
+        }
+
+        const tickets = await dbQuery.toArray();
 
         res.send({
             success: true,
             tickets,
             totalPages,
             totalCount,
-            currentPage: Number(page)
+            currentPage: parsedPage
         });
 
     } catch (error) {
