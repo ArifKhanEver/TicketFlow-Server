@@ -11,11 +11,10 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // ----------------- Middleware -----------------
+app.set('trust proxy', 1);
+
 app.use(cors({
-    origin: [
-        "http://localhost:3000",
-        "https://ticket-flow-online.vercel.app"
-    ],
+    origin: process.env.CLIENT_URL,
     credentials: true
 }));
 app.use(express.json());
