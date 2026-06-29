@@ -749,7 +749,7 @@ app.get('/api/revenue/overview', verifyDbReady, async (req, res) => {
 
 async function startServer() {
     try {
-        // await connectDB();   // Wait for MongoDB to connect and set collections
+        await connectDB();   // Wait for MongoDB to connect and set collections
         app.listen(port, () => {
             console.log(`🚀 Server listening on port ${port}`);
         });
