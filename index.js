@@ -57,7 +57,6 @@ async function connectDB() {
     }
 }
 
-connectDB();
 
 const verifyDbReady = (req, res, next) => {
     if (!usersCollection || !ticketCollection) {
@@ -742,8 +741,16 @@ app.get('/api/revenue/overview', verifyDbReady, async (req, res) => {
 
 
 
-// ----------------- Server Listening (instant) -----------------
-app.listen(port, () => {
-    console.log(`🚀 Server listening on port ${port}`);
-});
+async function startServer() {
+    try {
+        await connectDB();   // Wait for MongoDB to connect and set collections
+        app.listen(port, () => {
+            console.log(`🚀 Server listening on port ${port}`);
+        });
+    } catch (error) {
+        console.error("❌ Failed to start server due to DB connection error:", error);
+        process.exit(1);     // Exit if DB fails (prevents running with broken state)
+    }
+}
 
+startServer();
