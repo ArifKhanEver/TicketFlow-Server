@@ -197,10 +197,13 @@ app.delete('/api/tickets/:id', verifyDbReady, verifyToken, verifyVendor, async (
 
 // GET: Global Multi-Role Ticket Matrix Pipeline (With Scalability & Fraud Exclusion Filter)
 app.get('/api/tickets', verifyDbReady, async (req, res) => {
+    console.log("server query", req.query);
     try {
-        const { vendorId, role, featured, limit } = req.query;
+        const { vendorId, role, featured, page = 1, limit = 8, from, to, sort, transportType } = req.query;
         let query = {};
-        let sortOption = { departureDateTime: 1 };
+        
+        let sortOption = { _id: -1 }; 
+        const skip = (Number(page) - 1) * Number(limit);
 
         const now = new Date();
         const year = now.getFullYear();
@@ -215,38 +218,62 @@ app.get('/api/tickets', verifyDbReady, async (req, res) => {
 
         if (role === 'admin') {
             query.departureDateTime = { $gt: currentStringTime };
-            // query.vendorId = { $nin: bannedVendorIds };
-        }
+            sortOption = { departureDateTime: 1 };
+        } 
         else if (vendorId) {
             query.vendorId = vendorId;
-        }
+        } 
         else {
             query.status = "approved";
             query.departureDateTime = { $gt: currentStringTime };
             query.vendorId = { $nin: bannedVendorIds };
 
+            if (from) query.from = { $regex: from, $options: 'i' };
+            if (to) query.to = { $regex: to, $options: 'i' };
+
+            if (transportType) {
+                const typesArray = transportType.split(',');
+                query.transportType = { $in: typesArray };
+            }
+
+            if (sort === 'Price: Low to High') {
+                sortOption = { price: 1 };
+            } else if (sort === 'Price: High to Low') {
+                sortOption = { price: -1 };
+            } else if (sort === 'Earliest Departure') {
+                sortOption = { departureDateTime: 1 };
+            }
+
             if (featured === 'true') {
                 query.isAdvertised = true;
-                sortOption = { departureDateTime: 1 };
-            } else {
-                sortOption = { _id: -1 };
+                if (!sort || sort === 'Recommended') {
+                    sortOption = { departureDateTime: 1 };
+                }
             }
         }
 
-        let cursor = ticketCollection.find(query).sort(sortOption);
+        const totalCount = await ticketCollection.countDocuments(query);
+        const totalPages = Math.ceil(totalCount / Number(limit)) || 1;
 
-        if (limit) {
-            cursor = cursor.limit(parseInt(limit));
-        }
+        const tickets = await ticketCollection.find(query)
+            .sort(sortOption)
+            .skip(skip)
+            .limit(Number(limit))
+            .toArray();
 
-        const result = await cursor.toArray();
-        res.send({ success: true, data: result });
+        res.send({
+            success: true,
+            tickets,
+            totalPages,
+            totalCount,
+            currentPage: Number(page)
+        });
 
     } catch (error) {
+        console.error("🚨 Tickets API Failure:", error.message);
         res.status(500).send({ success: false, error: error.message });
     }
 });
-
 
 // Getting Ticket Details
 app.get('/api/tickets/:id', verifyDbReady, verifyToken, async (req, res) => {
