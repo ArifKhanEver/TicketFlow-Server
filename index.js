@@ -4,6 +4,7 @@ dns.setServers(['8.8.8.8', '8.8.4.4', "1.1.1.1"]);
 const express = require('express');
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const { createRemoteJWKSet, jwtVerify } = require("jose-cjs");
 require('dotenv').config();
 
 const app = express();
@@ -29,6 +30,8 @@ const client = new MongoClient(uri, {
     }
 });
 
+const JWKS = createRemoteJWKSet(new URL(`${process.env.CLIENT_URL}/api/auth/jwks`))
+
 let db;
 let ticketCollection;
 let vendorCollection;
@@ -45,6 +48,7 @@ async function connectDB() {
         usersCollection = db.collection('user');
         sessionCollection = db.collection('session');
         bookingCollection = db.collection('bookings');
+        paymentCollection = db.collection('payments')
 
         await client.db("admin").command({ ping: 1 });
         console.log("🟢 Pinged your deployment. You successfully connected to MongoDB!");
@@ -70,23 +74,19 @@ const verifyToken = async (req, res, next) => {
     }
 
     const token = authHeader.split(" ")[1]
-
     if (!token) {
         return res.status(401).send({ message: "unauthorized token" })
     }
 
-    const query = { token: token }
-    const session = await sessionCollection.findOne(query)
-    const userId = session.userId
-
-    const userQuery = {
-        _id: userId
+    try{
+        const {payload} = await jwtVerify(token, JWKS)
+        req.user = payload
+        next()
+    }catch(error){
+        console.log(error)
+        return res.status(401).json({message: "unauthorized"})
     }
 
-    const user = await usersCollection.findOne(userQuery)
-
-    req.user = user
-    next()
 }
 
 const verifyUser = async (req, res, next) => {
@@ -96,7 +96,6 @@ const verifyUser = async (req, res, next) => {
     next();
 }
 
-
 const verifyVendor = async (req, res, next) => {
     if (req.user?.role !== "vendor") {
         return res.status(403).send({ message: "forbidden access" })
@@ -104,11 +103,11 @@ const verifyVendor = async (req, res, next) => {
     next();
 }
 
-
 const verifyAdmin = async (req, res, next) => {
     if (req.user?.role !== "admin") {
         return res.status(403).send({ message: "forbidden access" })
     }
+
     next();
 }
 
@@ -118,7 +117,7 @@ app.get('/', verifyDbReady, async (req, res) => {
 })
 
 //Getting Users
-app.get('/api/users', verifyDbReady, async (req, res) => {
+app.get('/api/users', verifyDbReady, verifyToken, async (req, res) => {
     try {
         const result = await usersCollection.find().toArray();
         res.send(result)
@@ -128,7 +127,7 @@ app.get('/api/users', verifyDbReady, async (req, res) => {
 })
 
 //Modifying Users role
-app.patch('/api/users', verifyDbReady, async (req, res) => {
+app.patch('/api/users', verifyDbReady, verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { userId, modifiedRole, banned } = req.body;
 
@@ -165,7 +164,7 @@ app.patch('/api/users', verifyDbReady, async (req, res) => {
 
 
 // Creating Ticket
-app.post('/api/tickets', verifyDbReady, async (req, res) => {
+app.post('/api/tickets', verifyDbReady, verifyToken, verifyVendor, async (req, res) => {
     try {
         const ticket = { ...req.body, createdAt: new Date() }
         const result = await ticketCollection.insertOne(ticket)
@@ -177,7 +176,7 @@ app.post('/api/tickets', verifyDbReady, async (req, res) => {
 
 
 // Deleting Tickets
-app.delete('/api/tickets/:id', verifyDbReady, async (req, res) => {
+app.delete('/api/tickets/:id', verifyDbReady, verifyToken, verifyVendor, async (req, res) => {
     try {
         const { id } = req.params
 
@@ -250,7 +249,7 @@ app.get('/api/tickets', verifyDbReady, async (req, res) => {
 
 
 // Getting Ticket Details
-app.get('/api/tickets/:id', verifyDbReady, async (req, res) => {
+app.get('/api/tickets/:id', verifyDbReady, verifyToken, async (req, res) => {
     try {
         const { id } = req.params
         const result = await ticketCollection.findOne(new ObjectId(id))
@@ -262,7 +261,7 @@ app.get('/api/tickets/:id', verifyDbReady, async (req, res) => {
 
 
 // Updating tickets by vendor
-app.patch('/api/tickets', verifyDbReady, async (req, res) => {
+app.patch('/api/tickets', verifyDbReady, verifyToken, verifyVendor, async (req, res) => {
     try {
         const { ticketId, ...updateFields } = req.body;
 
@@ -300,7 +299,7 @@ app.patch('/api/tickets', verifyDbReady, async (req, res) => {
 
 
 // Approving tickets by admin
-app.patch('/api/bookings', verifyDbReady, async (req, res) => {
+app.patch('/api/bookings', verifyDbReady, verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { ticketId, actionStatus } = req.body;
 
@@ -329,7 +328,7 @@ app.patch('/api/bookings', verifyDbReady, async (req, res) => {
 
 
 // Admin Route: Toggle advertisement with strict campaign slot management
-app.patch('/api/tickets/advertise', verifyDbReady, async (req, res) => {
+app.patch('/api/tickets/advertise', verifyDbReady, verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { ticketId, isAdvertised } = req.body;
         const currentServerTime = new Date().toISOString();
@@ -361,7 +360,7 @@ app.patch('/api/tickets/advertise', verifyDbReady, async (req, res) => {
 
 
 // Booking Ticket
-app.post('/api/bookings', verifyDbReady, async (req, res) => {
+app.post('/api/bookings', verifyDbReady, verifyToken, async (req, res) => {
     try {
         const booking = { ...req.body, createdAt: new Date() }
         const result = await bookingCollection.insertOne(booking)
@@ -373,8 +372,7 @@ app.post('/api/bookings', verifyDbReady, async (req, res) => {
 
 
 // My Booked Tickets
-// GET: Fetch bookings for a specific user via Search Query (Temporary Setup)
-app.get('/api/bookings/my-bookings', verifyDbReady, async (req, res) => {
+app.get('/api/bookings/my-bookings', verifyDbReady, verifyToken, async (req, res) => {
     try {
         const { userId } = req.query;
         if (!userId) {
@@ -393,7 +391,7 @@ app.get('/api/bookings/my-bookings', verifyDbReady, async (req, res) => {
 
 // allBookings for admin
 // GET: Admin Access Only - Fetch platform-wide global booking logs
-app.get('/api/bookings/admin/all-bookings', verifyDbReady, async (req, res) => {
+app.get('/api/bookings/admin/all-bookings', verifyDbReady, verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { role } = req.query;
         if (role !== 'admin') {
@@ -419,8 +417,7 @@ app.get('/api/bookings/admin/all-bookings', verifyDbReady, async (req, res) => {
 
 
 // Requested Booking Tickets
-// GET: Fetch bookings for a specific user via Search Query (Temporary Setup)
-app.get('/api/bookings/requested-bookings', verifyDbReady, async (req, res) => {
+app.get('/api/bookings/requested-bookings', verifyDbReady, verifyToken, verifyVendor, async (req, res) => {
     try {
         const { vendorId } = req.query;
         if (!vendorId) {
@@ -438,7 +435,7 @@ app.get('/api/bookings/requested-bookings', verifyDbReady, async (req, res) => {
 
 
 // Updating Bookings Requests status
-app.patch('/api/bookings/requested-bookings', verifyDbReady, async (req, res) => {
+app.patch('/api/bookings/requested-bookings', verifyDbReady, verifyToken, async (req, res) => {
     try {
         const { bookingId, actionStatus } = req.body;
 
@@ -465,7 +462,7 @@ app.patch('/api/bookings/requested-bookings', verifyDbReady, async (req, res) =>
 
 
 // Decreasing total ticket count
-app.patch('/api/bookings', verifyDbReady, async (req, res) => {
+app.patch('/api/bookings', verifyDbReady, verifyToken, async (req, res) => {
     try {
         const { ticketId, bookingQuantity } = req.body;
 
@@ -493,7 +490,7 @@ app.patch('/api/bookings', verifyDbReady, async (req, res) => {
 
 
 // Booking status updating
-app.patch('/api/bookings/status/:id', verifyDbReady, async (req, res) => {
+app.patch('/api/bookings/status/:id', verifyDbReady, verifyToken, async (req, res) => {
     try {
         const { id } = req.params
         const { status } = req.body
@@ -534,6 +531,187 @@ app.delete('/api/bookings/:id', verifyDbReady, async (req, res) => {
         res.status(500).send({ error: error.message })
     }
 })
+
+
+
+// Saving transaction details after successful checkout
+app.post('/api/payments/save', verifyDbReady, verifyToken, async (req, res) => {
+    try {
+        const { bookingId, transactionId, ticketId, ticketTitle, amount, customerEmail, status, userId, bookingQuantity} = req.body;
+
+        if (!bookingId || !transactionId) {
+            return res.status(400).send({ 
+                success: false, 
+                error: "Required parameters (bookingId, transactionId) are missing." 
+            });
+        }
+
+        const existingPayment = await paymentCollection.findOne({ transactionId: transactionId });
+        
+        if (existingPayment) {
+            return res.send({ 
+                success: true, 
+                message: "Transaction already verified and stored. Skipping duplicate insertion." 
+            });
+        }
+
+        const bookingFilter = { _id: new ObjectId(bookingId) };
+        const bookingUpdate = {
+            $set: {
+                status: status || "paid"
+            }
+        };
+        await bookingCollection.updateOne(bookingFilter, bookingUpdate);
+
+        const paymentDoc = {
+            bookingId: bookingId,
+            ticketId: ticketId || "",
+            userId,
+            bookingQuantity: Number(bookingQuantity),
+            ticketTitle: ticketTitle || "Fleet Travel Token",
+            transactionId: transactionId,
+            amount: Number(amount) || 0,
+            customerEmail: customerEmail || "",
+            paidAt: new Date(),
+            status: status || "paid"
+        };
+
+        const result = await paymentCollection.insertOne(paymentDoc);
+
+        if (ticketId) {
+            await ticketCollection.updateOne(
+                { _id: new ObjectId(ticketId) },
+                { $inc: { quantity: -Number(bookingQuantity || 1) } }
+            );
+        }
+
+        if (result.insertedId) {
+            res.send({ success: true, message: "Payment lifecycle recorded and booking status patched." });
+        } else {
+            res.status(500).send({ success: false, error: "Failed to isolate payment record." });
+        }
+    } catch (error) {
+        console.error("🚨 Express Payment Database Splitting Exception:", error);
+        res.status(500).send({ success: false, error: error.message });
+    }
+});
+
+
+//getting payment details
+app.get('/api/payments/user', verifyDbReady, verifyToken, async (req, res) => {
+    try {
+        const { userId } = req.query;
+        if (!userId) {
+            return res.status(400).send({ 
+                success: false, 
+                error: "UserId query parameter is required to track ledger entries." 
+            });
+        }
+
+        const payments = await paymentCollection
+            .find({ userId })
+            .sort({ paidAt: -1 })
+            .toArray();
+
+        res.send({ success: true, payments });
+    } catch (error) {
+        console.error("🚨 Express Fetch User Payments Exception:", error);
+        res.status(500).send({ success: false, error: error.message });
+    }
+});
+
+
+//Counting revenue (overview)
+app.get('/api/revenue/overview', verifyDbReady, async (req, res) => {
+    try {
+        const { role, userId } = req.query;
+
+        if (!role || !userId) {
+            return res.status(400).send({ success: false, error: "Authentication parameters (role, userId) missing." });
+        }
+
+        const isAdmin = role === 'admin';
+
+        const ticketMatch = isAdmin ? {} : { vendorId: userId };
+        const totalTicketsDoc = await ticketCollection.aggregate([
+            { $match: ticketMatch },
+            { $group: { _id: null, total: { $sum: "$quantity" } } }
+        ]).toArray();
+        const totalTicketsAdded = totalTicketsDoc[0]?.total || 0;
+
+        let paymentPipeline = [];
+
+        if (!isAdmin) {
+            paymentPipeline.push(
+                { $match: { ticketId: { $exists: true, $ne: "" } } },
+                { $addFields: { ticketObjId: { $toObjectId: "$ticketId" } } },
+                {
+                    $lookup: {
+                        from: "tickets",
+                        localField: "ticketObjId",
+                        foreignField: "_id",
+                        as: "ticketInfo"
+                    }
+                },
+                { $unwind: "$ticketInfo" },
+                { $match: { "ticketInfo.vendorId": userId } }
+            );
+        }
+
+        const statsPipeline = [
+            ...paymentPipeline,
+            { 
+                $group: { 
+                    _id: null, 
+                    totalRevenue: { $sum: "$amount" }, 
+                    totalSold: { $sum: "$bookingQuantity" } 
+                } 
+            }
+        ];
+        
+        const revenueDoc = await paymentCollection.aggregate(statsPipeline).toArray();
+        const totalRevenueBDT = revenueDoc[0]?.totalRevenue || 0;
+        const totalTicketsSold = revenueDoc[0]?.totalSold || 0;
+
+        const chartPipeline = [
+            ...paymentPipeline,
+            {
+                $group: {
+                    _id: { $month: "$paidAt" },
+                    revenue: { $sum: "$amount" },
+                    sold: { $sum: "$bookingQuantity" }
+                }
+            },
+            { $sort: { "_id": 1 } }
+        ];
+        const monthlyData = await paymentCollection.aggregate(chartPipeline).toArray();
+
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const monthlyAnalytics = monthNames.map((name, index) => {
+            const match = monthlyData.find(item => item._id === index + 1);
+            return {
+                name,
+                added: Math.floor(totalTicketsAdded / 12), 
+                sold: match ? match.sold : 0,
+                revenue: match ? match.revenue : 0
+            };
+        });
+
+        res.send({
+            success: true,
+            metrics: {
+                totalTicketsAdded,
+                totalTicketsSold,
+                totalRevenueBDT,
+                monthlyAnalytics
+            }
+        });
+
+    } catch (error) {
+        console.error("🚨 DB Aggregation Pipeline Crash:", error);
+        res.status(500).send({ success: false, error: error.message });
+    }
+});
 
 
 
