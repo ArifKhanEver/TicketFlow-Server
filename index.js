@@ -1,68 +1,30 @@
 const dns = require("node:dns");
-dns.setServers(['8.8.8.8', '8.8.4.4', "1.1.1.1"]);
-
-const express = require('express');
-const cors = require('cors');
-const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+dns.setServers(["1.1.1.1", "8.8.8.8"]);
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { createRemoteJWKSet, jwtVerify } = require("jose-cjs");
-require('dotenv').config();
-
 const app = express();
 const port = process.env.PORT || 5000;
 
-// ----------------- Middleware -----------------
-app.set('trust proxy', 1);
-
-app.use(cors({
-    origin: process.env.CLIENT_URL,
-    credentials: true
-}));
+app.use(cors());
 app.use(express.json());
 
-// ----------------- Database Config -----------------
 const uri = process.env.MONGODB_URI;
+
 const client = new MongoClient(uri, {
-    serverApi: {
-        version: ServerApiVersion.v1,
-        strict: true,
-        deprecationErrors: true,
-    }
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  },
 });
 
-const JWKS = createRemoteJWKSet(new URL(`${process.env.CLIENT_URL}/api/auth/jwks`))
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.NEXT_CLIENT_URL}/api/auth/jwks`),
+);
 
-let db;
-let ticketCollection;
-let vendorCollection;
-let usersCollection;
-let sessionCollection;
-let bookingCollection;
-
-async function connectDB() {
-    try {
-        // await client.connect();
-        db = client.db("TicketFlow");
-        ticketCollection = db.collection('tickets');
-        vendorCollection = db.collection('vendors');
-        usersCollection = db.collection('user');
-        sessionCollection = db.collection('session');
-        bookingCollection = db.collection('bookings');
-        paymentCollection = db.collection('payments')
-
-        // await client.db("admin").command({ ping: 1 });
-        console.log("🟢 Pinged your deployment. You successfully connected to MongoDB!");
-    } catch (error) {
-        console.error("🔴 Failed to connect to MongoDB:", error);
-    }
-}
-
-
-const verifyDbReady = (req, res, next) => {
-    if (!usersCollection || !ticketCollection) {
-        return res.status(503).json({ error: "Database is initializing, please try again in a moment." });
-    }
-    next();
-};
 
 
 const verifyToken = async (req, res, next) => {
@@ -109,13 +71,26 @@ const verifyAdmin = async (req, res, next) => {
     next();
 }
 
-// Root Route 
-app.get('/', verifyDbReady, async (req, res) => {
-    res.send("Tickets are hovering on the horizon. Go grab them.........")
-})
+
+const run = async () => {
+  try {
+    // await client.connect();
+    db = client.db("TicketFlow");
+        ticketCollection = db.collection('tickets');
+        vendorCollection = db.collection('vendors');
+        usersCollection = db.collection('user');
+        sessionCollection = db.collection('session');
+        bookingCollection = db.collection('bookings');
+        paymentCollection = db.collection('payments')
+
+
+// app.get('/', async (req, res) => {
+//     res.send("Tickets are hovering on the horizon. Go grab them.........")
+    
+// })
 
 //Getting Users
-app.get('/api/users', verifyDbReady, verifyToken, async (req, res) => {
+app.get('/api/users', verifyToken, async (req, res) => {
     try {
         const result = await usersCollection.find().toArray();
         res.send(result)
@@ -125,7 +100,7 @@ app.get('/api/users', verifyDbReady, verifyToken, async (req, res) => {
 })
 
 //Modifying Users role
-app.patch('/api/users', verifyDbReady, verifyToken, verifyAdmin, async (req, res) => {
+app.patch('/api/users', verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { userId, modifiedRole, banned } = req.body;
 
@@ -162,7 +137,7 @@ app.patch('/api/users', verifyDbReady, verifyToken, verifyAdmin, async (req, res
 
 
 // Creating Ticket
-app.post('/api/tickets', verifyDbReady, verifyToken, verifyVendor, async (req, res) => {
+app.post('/api/tickets', verifyToken, verifyVendor, async (req, res) => {
     try {
         const ticket = { ...req.body, createdAt: new Date() }
         const result = await ticketCollection.insertOne(ticket)
@@ -174,7 +149,7 @@ app.post('/api/tickets', verifyDbReady, verifyToken, verifyVendor, async (req, r
 
 
 // Deleting Tickets
-app.delete('/api/tickets/:id', verifyDbReady, verifyToken, verifyVendor, async (req, res) => {
+app.delete('/api/tickets/:id', verifyToken, verifyVendor, async (req, res) => {
     try {
         const { id } = req.params
 
@@ -195,7 +170,7 @@ app.delete('/api/tickets/:id', verifyDbReady, verifyToken, verifyVendor, async (
 
 // GET: Global Multi-Role Ticket Matrix Pipeline (With Scalability & Fraud Exclusion Filter)
 // GET: Global Multi-Role Ticket Matrix Pipeline (With Scalability & Fraud Exclusion Filter)
-app.get('/api/tickets', verifyDbReady, async (req, res) => {
+app.get('/api/tickets', async (req, res) => {
     console.log("server query", req.query);
     try {
         const { vendorId, role, featured, page, limit, from, to, sort, transportType } = req.query;
@@ -281,7 +256,7 @@ app.get('/api/tickets', verifyDbReady, async (req, res) => {
 });
 
 // Getting Ticket Details
-app.get('/api/tickets/:id', verifyDbReady, verifyToken, async (req, res) => {
+app.get('/api/tickets/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params
         const result = await ticketCollection.findOne(new ObjectId(id))
@@ -293,7 +268,7 @@ app.get('/api/tickets/:id', verifyDbReady, verifyToken, async (req, res) => {
 
 
 // Updating tickets by vendor
-app.patch('/api/tickets', verifyDbReady, verifyToken, verifyVendor, async (req, res) => {
+app.patch('/api/tickets', verifyToken, verifyVendor, async (req, res) => {
     try {
         const { ticketId, ...updateFields } = req.body;
 
@@ -331,7 +306,7 @@ app.patch('/api/tickets', verifyDbReady, verifyToken, verifyVendor, async (req, 
 
 
 // Approving tickets by admin
-app.patch('/api/bookings', verifyDbReady, verifyToken, verifyAdmin, async (req, res) => {
+app.patch('/api/bookings', verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { ticketId, actionStatus } = req.body;
 
@@ -360,7 +335,7 @@ app.patch('/api/bookings', verifyDbReady, verifyToken, verifyAdmin, async (req, 
 
 
 // Admin Route: Toggle advertisement with strict campaign slot management
-app.patch('/api/tickets/advertise', verifyDbReady, verifyToken, verifyAdmin, async (req, res) => {
+app.patch('/api/tickets/advertise', verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { ticketId, isAdvertised } = req.body;
         const currentServerTime = new Date().toISOString();
@@ -392,7 +367,7 @@ app.patch('/api/tickets/advertise', verifyDbReady, verifyToken, verifyAdmin, asy
 
 
 // Booking Ticket
-app.post('/api/bookings', verifyDbReady, verifyToken, async (req, res) => {
+app.post('/api/bookings', verifyToken, async (req, res) => {
     try {
         const booking = { ...req.body, createdAt: new Date() }
         const result = await bookingCollection.insertOne(booking)
@@ -404,7 +379,7 @@ app.post('/api/bookings', verifyDbReady, verifyToken, async (req, res) => {
 
 
 // My Booked Tickets
-app.get('/api/bookings/my-bookings', verifyDbReady, verifyToken, async (req, res) => {
+app.get('/api/bookings/my-bookings', verifyToken, async (req, res) => {
     try {
         const { userId } = req.query;
         if (!userId) {
@@ -423,7 +398,7 @@ app.get('/api/bookings/my-bookings', verifyDbReady, verifyToken, async (req, res
 
 // allBookings for admin
 // GET: Admin Access Only - Fetch platform-wide global booking logs
-app.get('/api/bookings/admin/all-bookings', verifyDbReady, verifyToken, verifyAdmin, async (req, res) => {
+app.get('/api/bookings/admin/all-bookings', verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { role } = req.query;
         if (role !== 'admin') {
@@ -449,7 +424,7 @@ app.get('/api/bookings/admin/all-bookings', verifyDbReady, verifyToken, verifyAd
 
 
 // Requested Booking Tickets
-app.get('/api/bookings/requested-bookings', verifyDbReady, verifyToken, verifyVendor, async (req, res) => {
+app.get('/api/bookings/requested-bookings', verifyToken, verifyVendor, async (req, res) => {
     try {
         const { vendorId } = req.query;
         if (!vendorId) {
@@ -467,7 +442,7 @@ app.get('/api/bookings/requested-bookings', verifyDbReady, verifyToken, verifyVe
 
 
 // Updating Bookings Requests status
-app.patch('/api/bookings/requested-bookings', verifyDbReady, verifyToken, async (req, res) => {
+app.patch('/api/bookings/requested-bookings', verifyToken, async (req, res) => {
     try {
         const { bookingId, actionStatus } = req.body;
 
@@ -494,7 +469,7 @@ app.patch('/api/bookings/requested-bookings', verifyDbReady, verifyToken, async 
 
 
 // Decreasing total ticket count
-app.patch('/api/bookings', verifyDbReady, verifyToken, async (req, res) => {
+app.patch('/api/bookings', verifyToken, async (req, res) => {
     try {
         const { ticketId, bookingQuantity } = req.body;
 
@@ -522,7 +497,7 @@ app.patch('/api/bookings', verifyDbReady, verifyToken, async (req, res) => {
 
 
 // Booking status updating
-app.patch('/api/bookings/status/:id', verifyDbReady, verifyToken, async (req, res) => {
+app.patch('/api/bookings/status/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params
         const { status } = req.body
@@ -546,7 +521,7 @@ app.patch('/api/bookings/status/:id', verifyDbReady, verifyToken, async (req, re
 
 
 // Booking delete
-app.delete('/api/bookings/:id', verifyDbReady, async (req, res) => {
+app.delete('/api/bookings/:id', async (req, res) => {
     try {
         const { id } = req.params
 
@@ -567,7 +542,7 @@ app.delete('/api/bookings/:id', verifyDbReady, async (req, res) => {
 
 
 // Saving transaction details after successful checkout
-app.post('/api/payments/save', verifyDbReady, verifyToken, async (req, res) => {
+app.post('/api/payments/save', verifyToken, async (req, res) => {
     try {
         const { bookingId, transactionId, ticketId, ticketTitle, amount, customerEmail, status, userId, bookingQuantity} = req.body;
 
@@ -630,7 +605,7 @@ app.post('/api/payments/save', verifyDbReady, verifyToken, async (req, res) => {
 
 
 //getting payment details
-app.get('/api/payments/user', verifyDbReady, verifyToken, async (req, res) => {
+app.get('/api/payments/user', verifyToken, async (req, res) => {
     try {
         const { userId } = req.query;
         if (!userId) {
@@ -654,7 +629,7 @@ app.get('/api/payments/user', verifyDbReady, verifyToken, async (req, res) => {
 
 
 //Counting revenue (overview)
-app.get('/api/revenue/overview', verifyDbReady, async (req, res) => {
+app.get('/api/revenue/overview', async (req, res) => {
     try {
         const { role, userId } = req.query;
 
@@ -746,17 +721,21 @@ app.get('/api/revenue/overview', verifyDbReady, async (req, res) => {
 });
 
 
+    
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!",
+    // );
+  } finally {
+    // await client.close();
+  }
+};
+run().catch(console.dir);
 
-async function startServer() {
-    try {
-        await connectDB();   // Wait for MongoDB to connect and set collections
-        app.listen(port, () => {
-            console.log(`🚀 Server listening on port ${port}`);
-        });
-    } catch (error) {
-        console.error("❌ Failed to start server due to DB connection error:", error);
-        process.exit(1);     // Exit if DB fails (prevents running with broken state)
-    }
-}
+app.get("/", (req, res) => {
+  res.send("Welcome to TicketFlow!");
+});
 
-startServer();
+app.listen(port, () => {
+  console.log(`Server is listening on port ${port}`);
+});
