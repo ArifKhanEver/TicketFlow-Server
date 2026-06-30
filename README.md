@@ -1,71 +1,64 @@
-# TicketFlow Server (Backend API)
+# 🚌 TicketFlow Server (Backend API Engine)
 
-## 📌 Project Purpose
-TicketFlow Server is the backbone of the TicketFlow Online Ticket Booking Platform. Built using Node.js, Express.js, and MongoDB, this RESTful API securely manages user authentication state, role-based access controls, dynamic ticket management, and transaction handling via the Stripe payment gateway. It bridges transport vendors, travelers, and platform administrators efficiently.
+TicketFlow Server is the high-performance, secure, and scalably architected backend powerhouse driving the **TicketFlow Online Ticket Booking Platform**. Engineered using Node.js, Express.js, and the native MongoDB driver, this enterprise-grade RESTful API orchestrates secure cross-domain state management, fine-grained Role-Based Access Control (RBAC), multi-tenant inventory pipelines, and automated financial transaction streams via the Stripe payment gateway.
 
-## 🔗 Deployment & Client Repository
-- **Live Server URL:** [Insert Live Server Link Here, e.g., Vercel/Render]
-- **Client-side Repository:** [Insert GitHub Client Repo Link Here]
+---
 
-## 🛠️ Tech Stack & Key NPM Packages Used
-- **Runtime Environment:** Node.js
-- **Framework:** Express.js (v5.x)
-- **Database:** MongoDB Native Driver
-- **Security & Tokens:** `jose-cjs` / JWT for API protection
-- **CORS Handling:** `cors`
-- **Environment Management:** `dotenv`
+## 🔗 Deployment & System Infrastructure
 
-## 🚀 Core Features & Backend Architecture
-- **Role-Based Access Control (RBAC):** Robust middlewares (`verifyToken`, `verifyUser`, `verifyVendor`, `verifyAdmin`) to secure private endpoints based on BetterAuth database sessions and custom token matching.
-- **Ticket Management API:** Complete CRUD endpoints allowing Vendors to add tickets (with automated pending status), update ticket structures, and delete entries safely.
-- **Admin Supervision:** APIs for approving/rejecting vendor tickets, managing roles (Admin/Vendor), advertising selection toggles (capped at 6), and flagging fraudulent vendors.
-- **Booking & Stripe Workflow:** Endpoints to initialize bookings with a "pending" state, calculate pricing dynamically based on booking quantities, verify departure timers, and fulfill transactions using Stripe secure processing.
-- **Production Optimization:** Configured with advanced DNS network patches and explicit CORS origin configurations to completely eliminate 404, 504, or cross-origin request errors on production.
+* **Live API Gateway:** https://ticket-flow-server.vercel.app
+* **Production Client App:** https://ticket-flow-online.vercel.app
+* **Client-Side Source Repository:** https://github.com/ArifKhanEver/TicketFlow-Online-Ticket-Booking-Platform
+
+---
+
+## 🛠️ Enterprise Tech Stack & Dependency Matrix
+
+* **Runtime Core:** Node.js (Asynchronous, Event-Driven I/O Architecture)
+* **API Framework:** Express.js (v5.x cutting-edge routing pipeline)
+* **Database Engine:** MongoDB Native Driver (Optimized for low-overhead raw database cursors and aggregate tracking)
+* **Authentication Security:** `jose-cjs` / JWT (JSON Web Tokens) for lightweight cryptographic handshake verification
+* **Cross-Origin Protection:** `cors` (Configured with dynamic runtime origin lookup and reverse proxy trust states)
+* **Environment Control:** `dotenv` (Enforcing absolute isolation between local development variables and cloud systems)
+
+---
+
+## 🚀 Core Features & Advanced Backend Architecture
+
+### 1. Global Multi-Role Ticket Matrix Pipeline
+The entire transport ecosystem is managed via a single, highly optimized endpoint (`GET /api/tickets`) that acts as a polymorphic data channel utilizing **Scoped Default Assignment**:
+* **Admin Tier:** Bypasses pagination limits and fraud filters to return all upcoming inventory for holistic oversight.
+* **Vendor Tier:** Isolate and stream tenant-specific inventory mapped directly to the active vendor session identifier.
+* **Public Tier:** Implements a strict consumer gate returning only *approved* tickets with real-time departure validation ($departureDateTime > now$). It processes case-insensitive regex route lookups and comma-separated array tracking (`$in`) for multi-vehicle filter matrices, bounded by a standard 8-item page limit.
+
+### 2. Live Fraud Exclusion & Automated Safeguards
+* Enforces an instantaneous **Fraud Filter Layer** across public endpoints. It resolves cross-collection queries to capture banned vendors run-time, automatically dropping their listings from consumer search grids without interrupting the master sequence.
+
+### 3. Rigid Cryptographic Session Gates
+* Built-in server middleware layers (`verifyToken`, `verifyUser`, `verifyVendor`, `verifyAdmin`) read stateful signatures seamlessly. They sync client payloads directly with BetterAuth server-side cookies, eliminating malicious request forgery.
+
+### 4. Bulletproof Price Evaluation & Payment Streams
+* Rejects unsafe client-side price injections. The transaction endpoint fetches inventory rates from the ground-truth database to calculate financial bounds before generating safe Stripe payment intents.
+
+### 5. Production Network Layer Optimization
+* Features a production-ready CORS layout leveraging proxy-trust handshakes (`app.set('trust proxy', 1)`), providing smooth state mutations via complex HTTP verbs (like `PATCH` and `OPTIONS`) on high-security networks.
+
+---
 
 ## 🔑 Environment Variables Setup
-To run this server locally, create a `.env` file in the root directory and add the following keys:
+
+To spin up this backend infrastructure locally, clone the repository, establish a `.env` file within your root workspace, and seed it with the required config:
 
 ```env
+# System Configurations
 PORT=5000
-MONGODB_URI=your_mongodb_connection_string
-JWT_SECRET=your_custom_jwt_secret_key
-STRIPE_SECRET_KEY=your_stripe_secret_key
 
-```
+# Security Clefs & Database Links
+MONGODB_URI=your_mongodb_atlas_connection_string
+JWT_SECRET=your_high_entropy_cryptographic_jwt_secret_key
 
-🛰️ API Endpoints Overview (Probable)
-🔓 Public Routes
-```
-GET / - Server status check
+# Payment Gateways
+STRIPE_SECRET_KEY=your_private_stripe_live_or_test_key
 
-GET /api/tickets - Fetch admin-approved tickets (with search, filter, sorting, and pagination logic)
-```
-
-🔒 Protected User Routes
-```
-POST /api/bookings - Submit a new ticket booking request (Pending status)
-
-GET /api/user/bookings - Fetch booked tickets with countdown status
-
-POST /api/payments/create-payment-intent - Handle Stripe transaction verification
-```
-
-🔒 Protected Vendor Routes
-```
-POST /api/tickets - Add a new ticket for verification
-
-GET /api/vendor/tickets - View and manage self-added tickets (Update/Delete)
-
-PATCH /api/bookings/:id - Accept or Reject user booking requests
-```
-
-🔒 Protected Admin Routes
-```
-PATCH /api/admin/tickets/:id - Approve or Reject vendor tickets
-
-PATCH /api/admin/users/:id - Modify user roles or mark a vendor as fraud
-
-PATCH /api/admin/advertise/:id - Toggle home advertisement banner
-```
-
-Developed by: Shafiqul Islam Khan
+# Cross-Origin Target Links
+CLIENT_URL=http://localhost:3000
